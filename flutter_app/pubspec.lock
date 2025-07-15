@@ -185,7 +185,7 @@ packages:
     source: hosted
     version: "3.0.0"
   frame_msg:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: frame_msg
       sha256: "70a775c113233764e896dd9f143adc43dd08b12b82b73d56f34b10703338d28b"
@@ -233,7 +233,7 @@ packages:
     source: hosted
     version: "2.1.1"
   logging:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: logging
       sha256: c8245ada5f1717ed44271ed1c26b8ce85ca3228fd2ffdb75468ab01979309d61
