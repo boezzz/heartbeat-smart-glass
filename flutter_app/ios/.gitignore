@@ -27,6 +27,25 @@ Flutter/flutter_export_environment.sh
 ServiceDefinitions.json
 Runner/GeneratedPluginRegistrant.*
 
+# Build directories
+build/
+.build/
+
+# Xcode workspace and project user files
+*.xccheckout
+*.xcscmblueprint
+*.xcuserstate
+*.xcworkspace/xcuserdata
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+
+# Code Injection
+iOSInjectionProject/
+
 # Exceptions to above rules.
 !default.mode1v3
 !default.mode2v3

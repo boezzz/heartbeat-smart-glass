@@ -384,14 +384,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.0.3"
-  recase:
-    dependency: transitive
-    description:
-      name: recase
-      sha256: e4eb4ec2dcdee52dcf99cb4ceabaffc631d7424ee55e56f280bc039737f89213
-      url: "https://pub.dev"
-    source: hosted
-    version: "4.1.0"
   rxdart:
     dependency: transitive
     description:
@@ -549,22 +541,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "15.0.0"
-  watch_connectivity_garmin:
-    dependency: "direct main"
-    description:
-      name: watch_connectivity_garmin
-      sha256: f89b815d78100df15018ce7ace79da7b05d0e3dbea3f493630de0d3b928dfc66
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.1.6"
-  watch_connectivity_platform_interface:
-    dependency: transitive
-    description:
-      name: watch_connectivity_platform_interface
-      sha256: "82e8f165eac779d71bff7f6269a8be530798311cf7f3c33f1594d93468747d11"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.2.0"
   web:
     dependency: transitive
     description:

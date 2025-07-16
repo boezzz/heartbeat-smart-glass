@@ -11,3 +11,38 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+
+# Build outputs
+/build/
+**/build/
+/app/build/
+/app/release/
+/app/debug/
+
+# NDK
+obj/
+.externalNativeBuild/
+.cxx/
+
+# Signing files
+upload-keystore.jks
+upload-keystore.properties
+
+# Gradle files
+.gradle/
+gradle/
+
+# Local configuration file (sdk path, etc)
+local.properties
+
+# Log Files
+*.log
+
+# Android Studio generated files
+.navigation/
+.idea/
+*.iml
+.DS_Store
+
+# Proguard
+proguard-rules.pro

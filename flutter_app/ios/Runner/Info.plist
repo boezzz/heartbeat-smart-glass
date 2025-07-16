@@ -6,6 +6,22 @@
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
 	<string>Flutter App</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>garmin-connect</string>
+		<string>gcm-ciq</string>
+		<string>garmin-connect-mobile-app</string>
+	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>heartbeat-camera</string>
+			</array>
+			<key>CFBundleURLName</key>
+			<string>com.example.simpleFrameApp.garmin</string> </dict>
+	</array>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -49,11 +65,14 @@
 	<true/>
 
 	<key>NSBluetoothAlwaysUsageDescription</key>
-    <string>This app needs Bluetooth to function</string>
-
+	<string>Used to connect to wearable devices</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>This app needs Bluetooth to find and connect to smart devices.</string>
+	<string>Used to connect to wearable devices</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>This app needs your location to scan for nearby Bluetooth devices.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+	</array>
 </dict>
 </plist>

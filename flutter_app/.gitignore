@@ -5,9 +5,11 @@
 *.swp
 .DS_Store
 .atom/
+.build/
 .buildlog/
 .history
 .svn/
+.swiftpm/
 migrate_working_dir/
 
 # IntelliJ related
@@ -42,3 +44,42 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Environment and configuration files
+.env
+.env.local
+.env.development
+.env.production
+*.env
+
+# Test coverage
+coverage/
+lcov.info
+
+# Firebase and other service configs (keep templates, ignore actual keys)
+google-services.json
+GoogleService-Info.plist
+firebase_options.dart
+
+# Temporary files
+*.tmp
+*.temp
+*~
+
+# Logs
+*.log
+logs/
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Generated files
+*.g.dart
+*.freezed.dart
+*.mocks.dart
+
+# L10n generated files
+**/generated/
+lib/generated/
