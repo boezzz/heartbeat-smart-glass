@@ -223,22 +223,6 @@ class HeartRateMonitor {
     }
   }
   
-  // Turn on Bluetooth (Android only)
-  Future<void> turnOnBluetooth() async {
-    try {
-      if (Platform.isAndroid) {
-        await FlutterBluePlus.turnOn();
-        _clearError();
-      } else {
-        throw HeartRateException('Automatic Bluetooth activation is only supported on Android. Please enable Bluetooth manually.');
-      }
-    } catch (e) {
-      final errorMsg = 'Failed to turn on Bluetooth: ${_getSpecificErrorMessage(e)}';
-      _handleError(errorMsg);
-      throw HeartRateException(errorMsg);
-    }
-  }
-  
   // Scan for heart rate devices
   Future<void> scanForDevices() async {
     if (!_isInitialized) {
@@ -260,9 +244,11 @@ class HeartRateMonitor {
       try {
         final systemDevices = await FlutterBluePlus.connectedSystemDevices;
         for (BluetoothDevice device in systemDevices) {
+          // TODO: add more device names to the list
           if (device.platformName != null &&
               (device.platformName!.toLowerCase().contains('hrm') ||
-               device.platformName!.toLowerCase().contains('heart'))) {
+               device.platformName!.toLowerCase().contains('heart') ||
+               device.platformName!.toLowerCase().contains('forerunner'))) {
             _availableDevices.add(device);
             _log.info('Found system-connected HRM: ${device.platformName ?? 'Unknown Device'}');
           }
@@ -714,6 +700,20 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState, FrameVisionA
   bool _isConnectingStrap = false;
   String? _heartRateError;
 
+  // Text controller for threshold input
+  final TextEditingController _thresholdController = TextEditingController();
+
+  // Camera settings state variables
+  bool _autoExposure = true;
+  double _exposureValue = 0.5;
+  double _gainValue = 0.3;
+  double _shutterSpeedValue = 0.6;
+  String _imageQuality = 'very_high';
+  String _imageResolution = '640x480';
+  double _brightnessValue = 0.5;
+  double _contrastValue = 0.5;
+  double _saturationValue = 0.5;
+
   MainAppState() {
     Logger.root.level = Level.INFO;
     Logger.root.onRecord.listen((record) {
@@ -730,6 +730,12 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState, FrameVisionA
 
     // start the automatic connection process
     _startAutoConnection();
+  }
+
+  @override
+  void dispose() {
+    _thresholdController.dispose();
+    super.dispose();
   }
 
   /// Initialize heartrate monitoring
@@ -750,6 +756,17 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState, FrameVisionA
       setState(() {
         // UI will update with connection state
       });
+      
+      // Automatically enable heart rate monitoring when connected
+      if (isConnected && !_heartRateMonitoringEnabled) {
+        _log.info('Heart rate device connected - automatically enabling monitoring');
+        _enableHeartRateMonitoring();
+      } else if (!isConnected && _heartRateMonitoringEnabled) {
+        _log.info('Heart rate device disconnected - disabling monitoring');
+        setState(() {
+          _heartRateMonitoringEnabled = false;
+        });
+      }
     };
     
     _heartRateMonitor.onError = (errorMessage) {
@@ -830,16 +847,168 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState, FrameVisionA
     }
   }
 
-  /// Show heartrate threshold configuration dialog
-  void _showHeartRateConfigDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => _HeartRateConfigDialog(
-        currentThreshold: _heartRateMonitor.threshold,
-        onThresholdChanged: (newThreshold) {
-          _heartRateMonitor.updateThreshold(newThreshold);
-          setState(() {});
-        },
+  /// Enable heart rate monitoring automatically when device connects
+  void _enableHeartRateMonitoring() async {
+    if (!_heartRateMonitor.isConnected) {
+      _log.warning('Tried to enable heart rate monitoring but no device is connected');
+      return;
+    }
+    
+    setState(() {
+      _heartRateMonitoringEnabled = true;
+    });
+    
+    try {
+      await _heartRateMonitor.startMonitoring();
+      _log.info('Heart rate monitoring automatically enabled');
+      
+      // Show success notification
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(
+            content: Text('Heart rate monitoring enabled automatically'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+            action: SnackBarAction(
+              label: 'Dismiss',
+              textColor: Colors.white,
+              onPressed: () {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              },
+            ),
+          ),
+        );
+      });
+    } catch (e) {
+      setState(() {
+        _heartRateMonitoringEnabled = false;
+      });
+      _log.severe('Failed to automatically enable heart rate monitoring: $e');
+      
+      // Show error notification
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(
+            content: Text('Failed to enable heart rate monitoring: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      });
+    }
+  }
+
+  /// Build threshold configuration tile with inline text input
+  Widget _buildThresholdConfigTile() {
+    // Update the controller with current threshold value
+    _thresholdController.text = _heartRateMonitor.threshold.toString();
+    
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.tune, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Heart Rate Threshold',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _thresholdController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Threshold (BPM)',
+                    border: OutlineInputBorder(),
+                    suffixText: 'BPM',
+                    isDense: true,
+                  ),
+                  onSubmitted: (value) => _updateThreshold(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: _updateThreshold,
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  minimumSize: const Size(80, 40),
+                ),
+                child: const Text('Update'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Text(
+                'Current: ${_heartRateMonitor.threshold} BPM',
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Photos will be automatically captured when your heart rate exceeds this threshold.',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build debug info tile with inline display
+  Widget _buildDebugInfoTile() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.info_outline, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Debug Information',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              _getHeartRateDebugInfo(),
+              style: const TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 10,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -984,6 +1153,38 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState, FrameVisionA
     setState(() {
       _heartRateError = null;
     });
+  }
+
+  /// Update threshold from text field
+  void _updateThreshold() {
+    final value = _thresholdController.text;
+    final threshold = int.tryParse(value);
+    
+    if (threshold != null && threshold >= 30 && threshold <= 250) {
+      _heartRateMonitor.updateThreshold(threshold);
+      setState(() {});
+      
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Heart rate threshold updated to $threshold BPM'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } else {
+      // Show error message
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a valid threshold between 30 and 250 BPM'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      
+      // Reset text field to current threshold
+      _thresholdController.text = _heartRateMonitor.threshold.toString();
+    }
   }
 
   /// Get detailed heart rate status for debugging
@@ -1171,245 +1372,452 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState, FrameVisionA
               style: TextStyle(color: Colors.white, fontSize: 24),
             ),
           ),
-          // Camera settings - integrate the existing camera drawer
-          ExpansionTile(
-            leading: const Icon(Icons.camera_alt),
-            title: const Text('Camera Settings'),
-            children: [
-              // Get the original camera drawer content
-              ...(_getCameraDrawerContent()),
-            ],
+          
+          // Camera Settings Section
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'Camera Settings',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
           ),
-          // Heartrate settings
-          ExpansionTile(
-            leading: const Icon(Icons.favorite),
-            title: const Text('Heart Rate Settings'),
-            children: [
-              if (!_heartRateMonitor.isConnected)
-                Container(
-                  margin: const EdgeInsets.all(16),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+          
+          // Auto Exposure Toggle
+          SwitchListTile(
+            secondary: const Icon(Icons.auto_mode),
+            title: const Text('Auto Exposure'),
+            subtitle: const Text('Automatically adjust exposure settings'),
+            value: true, // Default to auto exposure
+            onChanged: (value) {
+              // Handle auto exposure toggle
+              setState(() {
+                // Update auto exposure state
+              });
+            },
+          ),
+          
+          // Manual Exposure Settings (show when auto exposure is off)
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.tune, size: 20),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Manual Exposure',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                // Exposure slider
+                const Text('Exposure', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                Slider(
+                  value: 0.5,
+                  min: 0.0,
+                  max: 1.0,
+                  divisions: 20,
+                  label: '50%',
+                  onChanged: (value) {
+                    setState(() {
+                      // Update exposure value
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                // Gain slider
+                const Text('Gain', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                Slider(
+                  value: 0.3,
+                  min: 0.0,
+                  max: 1.0,
+                  divisions: 20,
+                  label: '30%',
+                  onChanged: (value) {
+                    setState(() {
+                      // Update gain value
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                // Shutter speed slider
+                const Text('Shutter Speed', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                Slider(
+                  value: 0.6,
+                  min: 0.0,
+                  max: 1.0,
+                  divisions: 20,
+                  label: '60%',
+                  onChanged: (value) {
+                    setState(() {
+                      // Update shutter speed value
+                    });
+                  },
+                ),
+              ],
+            ),
+          ),
+          
+          // Image Quality Settings
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.high_quality, size: 20),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Image Quality',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                // Quality dropdown
+                DropdownButtonFormField<String>(
+                  value: 'High',
+                  decoration: const InputDecoration(
+                    labelText: 'Quality',
+                    border: OutlineInputBorder(),
+                    isDense: true,
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  items: ['Low', 'Medium', 'High', 'Ultra'].map((quality) {
+                    return DropdownMenuItem(
+                      value: quality,
+                      child: Text(quality),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setState(() {
+                      // Update quality setting
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                // Resolution dropdown
+                DropdownButtonFormField<String>(
+                  value: '640x480',
+                  decoration: const InputDecoration(
+                    labelText: 'Resolution',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: ['320x240', '640x480', '1280x720', '1920x1080'].map((resolution) {
+                    return DropdownMenuItem(
+                      value: resolution,
+                      child: Text(resolution),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setState(() {
+                      // Update resolution setting
+                    });
+                  },
+                ),
+              ],
+            ),
+          ),
+          
+          // Color Settings
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.palette, size: 20),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Color Settings',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                // Brightness slider
+                const Text('Brightness', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                Slider(
+                  value: 0.5,
+                  min: 0.0,
+                  max: 1.0,
+                  divisions: 20,
+                  label: '50%',
+                  onChanged: (value) {
+                    setState(() {
+                      // Update brightness value
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                // Contrast slider
+                const Text('Contrast', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                Slider(
+                  value: 0.5,
+                  min: 0.0,
+                  max: 1.0,
+                  divisions: 20,
+                  label: '50%',
+                  onChanged: (value) {
+                    setState(() {
+                      // Update contrast value
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                // Saturation slider
+                const Text('Saturation', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                Slider(
+                  value: 0.5,
+                  min: 0.0,
+                  max: 1.0,
+                  divisions: 20,
+                  label: '50%',
+                  onChanged: (value) {
+                    setState(() {
+                      // Update saturation value
+                    });
+                  },
+                ),
+              ],
+            ),
+          ),
+          
+          // Reset to defaults button
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  // Reset all camera settings to defaults
+                });
+              },
+              child: const Text('Reset to Defaults'),
+            ),
+          ),
+          
+          const Divider(),
+          
+          // Heart Rate Settings Section
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'Heart Rate Settings',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ),
+          
+          // Setup instructions if not connected
+          if (!_heartRateMonitor.isConnected)
+            Container(
+              margin: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
-                      Row(
-                        children: [
-                          Icon(Icons.bluetooth, color: Colors.blue, size: 16),
-                          const SizedBox(width: 8),
-                          const Text('Setup Instructions', style: TextStyle(fontWeight: FontWeight.bold)),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'To connect your heart rate strap:\n'
-                        '1. Put on your Bluetooth heart rate strap\n'
-                        '2. Make sure it\'s in pairing mode\n'
-                        '3. Ensure Bluetooth is enabled on your phone\n'
-                        '4. Tap "Connect Heart Rate Strap" below',
-                        style: TextStyle(fontSize: 12),
-                      ),
+                      Icon(Icons.bluetooth, color: Colors.blue, size: 16),
+                      const SizedBox(width: 8),
+                      const Text('Setup Instructions', style: TextStyle(fontWeight: FontWeight.bold)),
                     ],
                   ),
-                ),
-              // Error display section
-              if (_heartRateMonitor.lastError != null)
-                Container(
-                  margin: const EdgeInsets.all(16),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'To connect your heart rate strap:\n'
+                    '1. Put on your Bluetooth heart rate strap\n'
+                    '2. Make sure it\'s in pairing mode\n'
+                    '3. Ensure Bluetooth is enabled on your phone\n'
+                    '4. Tap "Connect Heart Rate Strap" below',
+                    style: TextStyle(fontSize: 12),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                ],
+              ),
+            ),
+          
+          // Error display section
+          if (_heartRateMonitor.lastError != null)
+            Container(
+              margin: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
-                      Row(
-                        children: [
-                          Icon(Icons.error, color: Colors.red, size: 16),
-                          const SizedBox(width: 8),
-                          const Text('Error Details', style: TextStyle(fontWeight: FontWeight.bold)),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
+                      Icon(Icons.error, color: Colors.red, size: 16),
+                      const SizedBox(width: 8),
+                      const Text('Error Details', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _heartRateMonitor.lastError!,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  if (_heartRateMonitor.lastErrorTime != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Last error: ${DateTime.now().difference(_heartRateMonitor.lastErrorTime!).inSeconds} seconds ago',
+                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                    ),
+                  ],
+                  if (_heartRateMonitor.consecutiveErrors > 1) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Consecutive errors: ${_heartRateMonitor.consecutiveErrors}',
+                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          
+          // Data quality section
+          if (_heartRateMonitor.isConnected && _heartRateMonitoringEnabled)
+            Container(
+              margin: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.analytics, color: Colors.green, size: 16),
+                      const SizedBox(width: 8),
+                      const Text('Data Quality', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Quality:', style: TextStyle(fontSize: 12)),
                       Text(
-                        _heartRateMonitor.lastError!,
-                        style: const TextStyle(fontSize: 12),
+                        '${_heartRateMonitor.dataQuality.toStringAsFixed(1)}%',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _heartRateMonitor.dataQuality > 95 ? Colors.green : Colors.orange,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                      if (_heartRateMonitor.lastErrorTime != null) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          'Last error: ${DateTime.now().difference(_heartRateMonitor.lastErrorTime!).inSeconds} seconds ago',
-                          style: const TextStyle(fontSize: 10, color: Colors.grey),
-                        ),
-                      ],
-                      if (_heartRateMonitor.consecutiveErrors > 1) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          'Consecutive errors: ${_heartRateMonitor.consecutiveErrors}',
-                          style: const TextStyle(fontSize: 10, color: Colors.grey),
-                        ),
-                      ],
                     ],
                   ),
-                ),
-              // Data quality section
-              if (_heartRateMonitor.isConnected && _heartRateMonitoringEnabled)
-                Container(
-                  margin: const EdgeInsets.all(16),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.analytics, color: Colors.green, size: 16),
-                          const SizedBox(width: 8),
-                          const Text('Data Quality', style: TextStyle(fontWeight: FontWeight.bold)),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Quality:', style: TextStyle(fontSize: 12)),
-                          Text(
-                            '${_heartRateMonitor.dataQuality.toStringAsFixed(1)}%',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: _heartRateMonitor.dataQuality > 95 ? Colors.green : Colors.orange,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (_heartRateMonitor.lastHeartRateUpdate != null) ...[
-                        const SizedBox(height: 4),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text('Last update:', style: TextStyle(fontSize: 12)),
-                            Text(
-                              '${DateTime.now().difference(_heartRateMonitor.lastHeartRateUpdate!).inSeconds}s ago',
-                              style: const TextStyle(fontSize: 12, color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      ],
-                      if (_heartRateMonitor.currentHeartRate != null) ...[
-                        const SizedBox(height: 4),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text('Current HR:', style: TextStyle(fontSize: 12)),
-                            Text(
-                              '${_heartRateMonitor.currentHeartRate} BPM',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: _heartRateMonitor.currentHeartRate! > _heartRateMonitor.threshold 
-                                  ? Colors.red : Colors.green,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ListTile(
-                leading: Icon(
-                  _heartRateMonitor.isConnected ? Icons.monitor_heart : Icons.monitor_heart_outlined,
-                  color: _heartRateMonitor.isConnected ? Colors.green : Colors.grey,
-                ),
-                title: Text(_heartRateMonitor.isConnected 
-                    ? 'Heart Rate Strap Connected' 
-                    : 'Connect Heart Rate Strap'),
-                subtitle: Text(_heartRateMonitor.isConnected 
-                    ? (_heartRateMonitor.connectedDevice?.platformName ?? 'Unknown Device')
-                    : 'Supports Bluetooth heart rate straps (Garmin, Polar, etc.)'),
-                trailing: _isConnectingStrap ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ) : null,
-                onTap: _isConnectingStrap ? null : _connectHeartRateStrap,
-              ),
-              ListTile(
-                leading: const Icon(Icons.tune),
-                title: const Text('Configure Threshold'),
-                subtitle: Text('Current: ${_heartRateMonitor.threshold} BPM'),
-                onTap: _showHeartRateConfigDialog,
-              ),
-              SwitchListTile(
-                secondary: const Icon(Icons.monitor_heart),
-                title: const Text('Enable Monitoring'),
-                subtitle: Text(_heartRateMonitoringEnabled 
-                    ? 'Auto-capture when threshold exceeded'
-                    : 'Manual capture only'),
-                value: _heartRateMonitoringEnabled,
-                onChanged: (value) => _toggleHeartRateMonitoring(),
-              ),
-              // Debug info option
-              ListTile(
-                leading: const Icon(Icons.info_outline),
-                title: const Text('Debug Info'),
-                subtitle: const Text('View detailed heart rate monitor status'),
-                onTap: () {
-                  showDialog(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      title: const Text('Heart Rate Debug Info'),
-                      content: SingleChildScrollView(
-                        child: Text(
-                          _getHeartRateDebugInfo(),
-                          style: const TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          child: const Text('Close'),
+                  if (_heartRateMonitor.lastHeartRateUpdate != null) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Last update:', style: TextStyle(fontSize: 12)),
+                        Text(
+                          '${DateTime.now().difference(_heartRateMonitor.lastHeartRateUpdate!).inSeconds}s ago',
+                          style: const TextStyle(fontSize: 12, color: Colors.grey),
                         ),
                       ],
                     ),
-                  );
-                },
+                  ],
+                  if (_heartRateMonitor.currentHeartRate != null) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Current HR:', style: TextStyle(fontSize: 12)),
+                        Text(
+                          '${_heartRateMonitor.currentHeartRate} BPM',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: _heartRateMonitor.currentHeartRate! > _heartRateMonitor.threshold 
+                              ? Colors.red : Colors.green,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
               ),
-            ],
+            ),
+          
+          // Heart Rate Strap Connection
+          ListTile(
+            leading: Icon(
+              _heartRateMonitor.isConnected ? Icons.monitor_heart : Icons.monitor_heart_outlined,
+              color: _heartRateMonitor.isConnected ? Colors.green : Colors.grey,
+            ),
+            title: Text(_heartRateMonitor.isConnected 
+                ? 'Heart Rate Strap Connected' 
+                : 'Connect Heart Rate Strap'),
+            subtitle: Text(_heartRateMonitor.isConnected 
+                ? (_heartRateMonitor.connectedDevice?.platformName ?? 'Unknown Device')
+                : 'Supports Bluetooth heart rate straps (Garmin, Polar, etc.)'),
+            trailing: _isConnectingStrap ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ) : null,
+            onTap: _isConnectingStrap ? null : _connectHeartRateStrap,
           ),
+          
+          // Threshold Configuration - Inline Text Field
+          _buildThresholdConfigTile(),
+          
+          // Enable Monitoring Switch
+          SwitchListTile(
+            secondary: const Icon(Icons.monitor_heart),
+            title: const Text('Enable Monitoring'),
+            subtitle: Text(_heartRateMonitoringEnabled 
+                ? 'Auto-capture when threshold exceeded'
+                : 'Manual capture only'),
+            value: _heartRateMonitoringEnabled,
+            onChanged: (value) => _toggleHeartRateMonitoring(),
+          ),
+          
+          // Debug Info - Inline Display
+          _buildDebugInfoTile(),
         ],
       ),
     );
   }
 
-  /// Get camera drawer content as a list of widgets
-  List<Widget> _getCameraDrawerContent() {
-    // For now, return the basic camera settings
-    // This should be replaced with the actual camera drawer content
-    return [
-      ListTile(
-        leading: const Icon(Icons.settings),
-        title: const Text('Camera Configuration'),
-        onTap: () {
-          // Camera settings logic
-        },
-      ),
-    ];
-  }
+
 
   /// Build heartrate status bar
   Widget _buildHeartRateStatusBar() {
@@ -1653,22 +2061,6 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState, FrameVisionA
               ],
             ),
           ),
-          // Settings button
-          GestureDetector(
-            onTap: _showHeartRateConfigDialog,
-            child: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: statusColor.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Icon(
-                Icons.settings,
-                color: statusColor,
-                size: 16,
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -1825,71 +2217,5 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState, FrameVisionA
   }
 }
 
-// Heartrate configuration dialog
-class _HeartRateConfigDialog extends StatefulWidget {
-  final int currentThreshold;
-  final Function(int) onThresholdChanged;
-  
-  const _HeartRateConfigDialog({
-    required this.currentThreshold,
-    required this.onThresholdChanged,
-  });
-  
-  @override
-  _HeartRateConfigDialogState createState() => _HeartRateConfigDialogState();
-}
 
-class _HeartRateConfigDialogState extends State<_HeartRateConfigDialog> {
-  late int _threshold;
-  
-  @override
-  void initState() {
-    super.initState();
-    _threshold = widget.currentThreshold;
-  }
-  
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Configure Heartrate Threshold'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text('Current threshold: $_threshold BPM'),
-          const SizedBox(height: 16),
-          Slider(
-            value: _threshold.toDouble(),
-            min: 60,
-            max: 200,
-            divisions: 140,
-            label: '$_threshold BPM',
-            onChanged: (value) {
-              setState(() {
-                _threshold = value.round();
-              });
-            },
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'Photos will be automatically captured when your heartrate exceeds this threshold.',
-            style: TextStyle(fontSize: 12, color: Colors.grey),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () {
-            widget.onThresholdChanged(_threshold);
-            Navigator.of(context).pop();
-          },
-          child: const Text('Save'),
-        ),
-      ],
-    );
-  }
-}
 
